@@ -4,6 +4,7 @@ import numpy as np
 import comfy.utils
 import comfy.sd
 import comfy.controlnet
+import execution_context
 import folder_paths
 from nodes import common_ksampler
 
@@ -112,6 +113,9 @@ class FluxControlnetSampler:
             "optional": {
                 "image": ("IMAGE",),
                 "latent": ("LATENT",),
+            },
+            "hidden": {
+                "exec_context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -121,7 +125,8 @@ class FluxControlnetSampler:
     CATEGORY = "CRT/Sampling"
 
     def execute(self, model, positive, vae, control_net, seed, seed_shift, steps, sampler_name, scheduler,
-                upscale_by, controlnet_strength, control_end, color_match_strength, image=None, latent=None):
+                upscale_by, controlnet_strength, control_end, color_match_strength, image=None, latent=None,
+                exec_context: execution_context.ExecutionContext=None):
 
         colored_print("\n🎮 Starting Flux ControlNet Sampling...", Colors.HEADER)
         
@@ -210,7 +215,7 @@ class FluxControlnetSampler:
         colored_print(f"   📊 Sampler: {sampler_name} | Scheduler: {scheduler}", Colors.BLUE)
         colored_print(f"   🔄 Steps: {steps} | CFG: {cfg} | Denoise: {denoise}", Colors.BLUE)
         colored_print("\n🔥 Starting ControlNet-guided sampling...", Colors.GREEN)
-        final_latent_tuple = common_ksampler(
+        final_latent_tuple = common_ksampler(exec_context,
             model, actual_seed, steps, cfg, sampler_name, scheduler,
             cnet_positive, cnet_negative, upscaled_latent, denoise=denoise
         )

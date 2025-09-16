@@ -2,6 +2,8 @@
 
 import torch
 import numpy as np
+
+import execution_context
 import folder_paths
 import torchaudio
 import random
@@ -14,7 +16,7 @@ except ImportError:
 
 class AudioPreviewer:
     def __init__(self):
-        self.output_dir = folder_paths.get_temp_directory()
+        # self.output_dir = folder_paths.get_temp_directory()
         self.type = "temp"
         self.prefix_append = "_temp_" + ''.join(random.choice("abcdefghijklmnopqrstupvxyz") for x in range(5))
 
@@ -24,6 +26,9 @@ class AudioPreviewer:
             "required": {
                 "audio": ("AUDIO",),
                 "preview_on_finish": (["ON", "OFF"], {"default": "ON"}),
+            },
+            "hidden": {
+                "exec_context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -32,9 +37,10 @@ class AudioPreviewer:
     FUNCTION = "process"
     CATEGORY = "CRT/Audio"
 
-    def process(self, audio, preview_on_finish):
+    def process(self, audio, preview_on_finish, exec_context: execution_context.ExecutionContext):
         filename_prefix = self.prefix_append
-        full_output_folder, filename, counter, subfolder, _ = folder_paths.get_save_image_path(filename_prefix, self.output_dir)
+        output_dir = folder_paths.get_temp_directory(user_hash=exec_context.user_hash)
+        full_output_folder, filename, counter, subfolder, _ = folder_paths.get_save_image_path(filename_prefix, output_dir)
         
         waveform_to_save = audio["waveform"][0] 
         sample_rate = audio["sample_rate"]

@@ -4,6 +4,7 @@ import numpy as np
 import comfy.utils
 import comfy.sd
 import comfy.controlnet
+import execution_context
 import folder_paths
 from nodes import common_ksampler
 
@@ -117,6 +118,9 @@ class FluxControlnetSamplerWithInjection:
             "optional": {
                 "image": ("IMAGE",),
                 "latent": ("LATENT",),
+            },
+            "hidden": {
+                "exec_context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -128,7 +132,8 @@ class FluxControlnetSamplerWithInjection:
     def execute(self, model, positive, vae, control_net, seed, seed_shift, steps, sampler_name, scheduler,
                 upscale_by, controlnet_strength, control_end, color_match_strength, 
                 enable_noise_injection, injection_point, injection_seed_offset, injection_strength, 
-                normalize_injected_noise, image=None, latent=None):
+                normalize_injected_noise, image=None, latent=None,
+                exec_context: execution_context.ExecutionContext=None):
 
         colored_print("\n🎮 Starting Enhanced Flux ControlNet Sampling...", Colors.HEADER)
         
@@ -231,7 +236,7 @@ class FluxControlnetSamplerWithInjection:
                 colored_print(f"   📏 Normalize Noise: {normalize_injected_noise}", Colors.CYAN)
         if enable_noise_injection == "enable":
             colored_print(f"\n🔥 Stage 1: Initial ControlNet sampling ({first_stage_steps} steps)...", Colors.GREEN)
-            stage1_latent = common_ksampler(
+            stage1_latent = common_ksampler(exec_context,
                 model, actual_seed, steps, cfg, sampler_name, scheduler,
                 cnet_positive, cnet_negative, upscaled_latent, 
                 denoise=denoise, start_step=0, last_step=first_stage_steps, force_full_denoise=False
@@ -263,7 +268,7 @@ class FluxControlnetSamplerWithInjection:
             remaining_steps = actual_steps - first_stage_steps
             colored_print(f"\n🔥 Stage 2: Final ControlNet sampling ({remaining_steps} steps)...", Colors.GREEN)
             
-            final_latent_tuple = common_ksampler(
+            final_latent_tuple = common_ksampler(exec_context,
                 model, actual_seed, steps, cfg, sampler_name, scheduler,
                 cnet_positive, cnet_negative, injected_latent,
                 denoise=denoise, disable_noise=True, start_step=first_stage_steps, 
@@ -274,7 +279,7 @@ class FluxControlnetSamplerWithInjection:
             
         else:
             colored_print("\n🔥 Starting standard ControlNet-guided sampling...", Colors.GREEN)
-            final_latent_tuple = common_ksampler(
+            final_latent_tuple = common_ksampler(exec_context,
                 model, actual_seed, steps, cfg, sampler_name, scheduler,
                 cnet_positive, cnet_negative, upscaled_latent, denoise=denoise
             )

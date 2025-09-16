@@ -7,6 +7,7 @@ import comfy.utils
 import comfy.sd
 import comfy.model_management as mm
 import comfy.samplers
+import execution_context
 from comfy_extras.nodes_upscale_model import ImageUpscaleWithModel, UpscaleModelLoader
 import folder_paths
 from nodes import common_ksampler, VAEEncode, VAEDecode
@@ -57,8 +58,8 @@ class ColorMatch:
 
 class PonyUpscaleSamplerWithInjection:
     @classmethod
-    def INPUT_TYPES(s):
-        upscale_models = folder_paths.get_filename_list("upscale_models")
+    def INPUT_TYPES(s, exec_context: execution_context.ExecutionContext):
+        upscale_models = folder_paths.get_filename_list(exec_context, "upscale_models")
         return {
             "required": {
                 "model": ("MODEL",),
@@ -117,7 +118,7 @@ class PonyUpscaleSamplerWithInjection:
         else:
             return 4
 
-    def _upscale_image(self, image, method, model_name, target_scale):
+    def _upscale_image(self, exec_context: execution_context.ExecutionContext, image, method, model_name, target_scale):
         """Upscale image using AI model or simple resize."""
         colored_print(f"🚀 Starting image upscaling ({method})...", Colors.CYAN)
         
@@ -139,7 +140,7 @@ class PonyUpscaleSamplerWithInjection:
         
         else:  # method == "model"
             try:
-                upscale_model = self.upscale_loader.load_model(model_name)[0]
+                upscale_model = self.upscale_loader.load_model(exec_context, model_name)[0]
                 colored_print(f"   ✅ Upscale model '{model_name}' loaded successfully", Colors.GREEN)
             except Exception as e:
                 colored_print(f"   ❌ Failed to load upscale model: {e}", Colors.RED)
@@ -227,7 +228,7 @@ class PonyUpscaleSamplerWithInjection:
 
         return mask
 
-    def _sample_tiled(self, model, positive, negative, working_latent, cfg, actual_seed, steps, sampler_name, scheduler, denoise, 
+    def _sample_tiled(self, exec_context: execution_context.ExecutionContext, model, positive, negative, working_latent, cfg, actual_seed, steps, sampler_name, scheduler, denoise,
                      tile_grid, tile_padding, mask_blur, enable_noise_injection, injection_point, injection_seed_offset, 
                      injection_strength, normalize_injected_noise):
         """Perform tiled sampling using proper overlapping tiles with blend masks."""
@@ -267,12 +268,12 @@ class PonyUpscaleSamplerWithInjection:
                     actual_steps = int(steps * denoise)
                     first_stage_steps = int(actual_steps * injection_point)
                     if first_stage_steps >= actual_steps or first_stage_steps == 0:
-                        processed_tile_latent = common_ksampler(
+                        processed_tile_latent = common_ksampler(exec_context,
                             model, tile_seed, steps, cfg, sampler_name, scheduler,
                             positive, negative, tile_latent_dict, denoise=denoise
                         )[0]
                     else:
-                        stage1_latent = common_ksampler(
+                        stage1_latent = common_ksampler(exec_context,
                             model, tile_seed, steps, cfg, sampler_name, scheduler,
                             positive, negative, tile_latent_dict, 
                             denoise=denoise, start_step=0, last_step=first_stage_steps, force_full_denoise=False
@@ -292,14 +293,14 @@ class PonyUpscaleSamplerWithInjection:
                         injected_latent_samples += new_noise * injection_strength
                         injected_latent = stage1_latent.copy()
                         injected_latent["samples"] = injected_latent_samples
-                        processed_tile_latent = common_ksampler(
+                        processed_tile_latent = common_ksampler(exec_context,
                             model, tile_seed, steps, cfg, sampler_name, scheduler,
                             positive, negative, injected_latent,
                             denoise=denoise, disable_noise=True, start_step=first_stage_steps, 
                             last_step=actual_steps, force_full_denoise=True
                         )[0]
                 else:
-                    processed_tile_latent = common_ksampler(
+                    processed_tile_latent = common_ksampler(exec_context,
                         model, tile_seed, steps, cfg, sampler_name, scheduler,
                         positive, negative, tile_latent_dict, denoise=denoise
                     )[0]
@@ -328,7 +329,8 @@ class PonyUpscaleSamplerWithInjection:
     def execute(self, model, positive, negative, vae, cfg, seed, seed_shift, steps, sampler_name, scheduler,
                 denoise, enable_upscale, upscale_method, upscale_model_name, upscale_by, enable_tiling, tile_grid, tile_padding, mask_blur,
                 enable_noise_injection, injection_point, injection_seed_offset, injection_strength, 
-                normalize_injected_noise, color_match_strength, image=None, latent=None):
+                normalize_injected_noise, color_match_strength, image=None, latent=None,
+                exec_context: execution_context.ExecutionContext=None):
 
         colored_print("\n🐎 Starting Pony Upscale Sampler with Injection, Tiling & Color Matching...", Colors.HEADER)
         
@@ -366,7 +368,7 @@ class PonyUpscaleSamplerWithInjection:
                 b, c, h_latent, w_latent = upscaled_latent_samples.shape
                 colored_print(f"   📐 Final latent dimensions: {w_latent}x{h_latent} ({w_latent*8}x{h_latent*8} pixels)", Colors.GREEN)
             else:
-                source_image = self._upscale_image(source_image, upscale_method, upscale_model_name, upscale_by)
+                source_image = self._upscale_image(exec_context, source_image, upscale_method, upscale_model_name, upscale_by)
                 h, w = source_image.shape[1], source_image.shape[2]
                 colored_print(f"   📐 Final source dimensions: {w}x{h}", Colors.GREEN)
                 working_latent = None  # Will encode later
@@ -392,7 +394,7 @@ class PonyUpscaleSamplerWithInjection:
         colored_print(f"   🎨 Color Matching: {'Enabled' if color_match_strength > 0 else 'Disabled'} (strength: {color_match_strength:.2f})", Colors.CYAN if color_match_strength > 0 else Colors.YELLOW)
         if enable_tiling == "enable":
             colored_print(f"\n🧩 Using tiled sampling ({tile_grid})...", Colors.GREEN)
-            final_latent = self._sample_tiled(
+            final_latent = self._sample_tiled(exec_context,
                 model, positive, negative, working_latent, cfg, actual_seed, steps, sampler_name, scheduler, denoise,
                 tile_grid, tile_padding, mask_blur, enable_noise_injection, injection_point, injection_seed_offset,
                 injection_strength, normalize_injected_noise
@@ -403,13 +405,13 @@ class PonyUpscaleSamplerWithInjection:
                 first_stage_steps = int(actual_steps * injection_point)
                 if first_stage_steps >= actual_steps or first_stage_steps == 0:
                     colored_print("🚫 Injection point invalid - using standard sampling", Colors.YELLOW)
-                    final_latent = common_ksampler(
+                    final_latent = common_ksampler(exec_context,
                         model, actual_seed, steps, cfg, sampler_name, scheduler,
                         positive, negative, working_latent, denoise=denoise
                     )[0]
                 else:
                     colored_print(f"\n🔥 Stage 1: Initial sampling ({first_stage_steps} steps)...", Colors.GREEN)
-                    stage1_latent = common_ksampler(
+                    stage1_latent = common_ksampler(exec_context,
                         model, actual_seed, steps, cfg, sampler_name, scheduler,
                         positive, negative, working_latent, 
                         denoise=denoise, start_step=0, last_step=first_stage_steps, force_full_denoise=False
@@ -433,7 +435,7 @@ class PonyUpscaleSamplerWithInjection:
                     injected_latent["samples"] = injected_latent_samples
                     remaining_steps = actual_steps - first_stage_steps
                     colored_print(f"\n🔥 Stage 2: Final sampling ({remaining_steps} steps)...", Colors.GREEN)
-                    final_latent = common_ksampler(
+                    final_latent = common_ksampler(exec_context,
                         model, actual_seed, steps, cfg, sampler_name, scheduler,
                         positive, negative, injected_latent,
                         denoise=denoise, disable_noise=True, start_step=first_stage_steps, 
@@ -441,7 +443,7 @@ class PonyUpscaleSamplerWithInjection:
                     )[0]
             else:
                 colored_print("\n🔥 Starting standard sampling...", Colors.GREEN)
-                final_latent = common_ksampler(
+                final_latent = common_ksampler(exec_context,
                     model, actual_seed, steps, cfg, sampler_name, scheduler,
                     positive, negative, working_latent, denoise=denoise
                 )[0]

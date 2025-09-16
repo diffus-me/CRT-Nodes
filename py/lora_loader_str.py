@@ -1,3 +1,4 @@
+import execution_context
 import folder_paths
 import comfy.utils
 
@@ -7,8 +8,8 @@ class LoraLoaderStr:
         self.loaded_lora = None
 
     @classmethod
-    def INPUT_TYPES(cls):
-        file_list = folder_paths.get_filename_list("loras")
+    def INPUT_TYPES(cls, exec_context: execution_context.ExecutionContext):
+        file_list = folder_paths.get_filename_list(exec_context, "loras")
         file_list.insert(0, "None")
         return {
             "required": {
@@ -19,6 +20,9 @@ class LoraLoaderStr:
                 "strength_model": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.1}),
                 "strength_clip": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.1}),
                 "include_strength": (["Yes", "No"],)
+            },
+            "hidden": {
+                "exec_context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -26,14 +30,14 @@ class LoraLoaderStr:
     FUNCTION = "load_lora"
     CATEGORY = "CRT/LoRA"
 
-    def load_lora(self, model, clip, switch, lora_name, strength_model, strength_clip, include_strength):
+    def load_lora(self, model, clip, switch, lora_name, strength_model, strength_clip, include_strength, exec_context: execution_context.ExecutionContext):
         if strength_model == 0 and strength_clip == 0:
             return (model, clip, "No LoRA Loaded")
 
         if switch == "Off" or lora_name == "None":
             return (model, clip, "No LoRA Loaded")
 
-        lora_path = folder_paths.get_full_path("loras", lora_name)
+        lora_path = folder_paths.get_full_path(exec_context, "loras", lora_name)
         lora = None
 
         if self.loaded_lora is not None:

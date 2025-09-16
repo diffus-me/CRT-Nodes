@@ -5,6 +5,7 @@ import comfy.samplers
 import comfy.utils
 import comfy.model_sampling
 import comfy.sd
+import execution_context
 import folder_paths
 import comfy.model_management
 import latent_preview
@@ -29,17 +30,17 @@ class Log:
     @staticmethod
     def header(message): print(f"\n{Log.HEADER}{Log.BOLD}{message}{Log.ENDC}")
 
-def find_lora_path_by_name(lora_name):
+def find_lora_path_by_name(exec_context: execution_context.ExecutionContext, lora_name):
 
-    all_loras = folder_paths.get_filename_list("loras")
+    all_loras = folder_paths.get_filename_list(exec_context, "loras")
     
     if lora_name in all_loras:
-        return folder_paths.get_full_path("loras", lora_name)
+        return folder_paths.get_full_path(exec_context, "loras", lora_name)
     
     lora_map = {os.path.basename(f): f for f in all_loras}
     if lora_name in lora_map:
         relative_path = lora_map[lora_name]
-        return folder_paths.get_full_path("loras", relative_path)
+        return folder_paths.get_full_path(exec_context, "loras", relative_path)
     
     Log.fail(f"LoRA not found: {lora_name}")
     Log.info(f"Available LoRAs with 'WAN2.2': {[l for l in all_loras if 'WAN2.2' in l]}")
@@ -137,7 +138,11 @@ class WAN2_2LoraCompareSampler:
                 "add_labels": ("BOOLEAN", {"default": False}),
                 "custom_labels": ("STRING", { "multiline": True, "default": "" }),
                 "label_font_size": ("INT", {"default": 24, "min": 8, "max": 72}),
-            }, "optional": { "vae": ("VAE",), }
+            },
+            "optional": { "vae": ("VAE",), },
+            "hidden": {
+                "exec_context": "EXECUTION_CONTEXT",
+            }
         }
 
     RETURN_TYPES = ("LATENT", "LATENT", "IMAGE", "IMAGE", "STRING")
@@ -194,7 +199,7 @@ class WAN2_2LoraCompareSampler:
                     mh_clone = set_shift(model_high_noise.clone(), sigma_shift)
                     
                     if config["high_name"]:
-                        lora_path = find_lora_path_by_name(config["high_name"])
+                        lora_path = find_lora_path_by_name(exec_context, config["high_name"])
                         if lora_path:
                             lora_data = comfy.utils.load_torch_file(lora_path, safe_load=True)
                             mh_clone, _ = comfy.sd.load_lora_for_models(mh_clone, None, lora_data, config["high_strength"], config["high_strength"])

@@ -5,6 +5,7 @@ import math
 from typing import Tuple, Optional, Union
 import comfy.model_management
 import comfy.utils
+import execution_context
 import folder_paths
 from spandrel import ModelLoader, ImageModelDescriptor
 import logging
@@ -33,14 +34,14 @@ class CRTPostProcessNode:
     radial_blur_types = ["spin", "zoom"]
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, exec_context: execution_context.ExecutionContext):
         return {
             "required": {
                 "image": ("IMAGE",),
             },
             "optional": {
                 "enable_upscale": ("BOOLEAN", {"default": False, "label_on": "On", "label_off": "Off"}),
-                "upscale_model_path": (folder_paths.get_filename_list("upscale_models"), {"default": "None"}),
+                "upscale_model_path": (folder_paths.get_filename_list(exec_context, "upscale_models"), {"default": "None"}),
                 "downscale_by": ("FLOAT", {"default": 0.5, "min": 0.25, "max": 1.0, "step": 0.05}),
                 "rescale_method": (cls.rescale_methods, {"default": "bicubic"}),
                 "precision": (cls.precision_options, {"default": "auto"}),
@@ -118,6 +119,9 @@ class CRTPostProcessNode:
                 
                 "enable_lens_distortion": ("BOOLEAN", {"default": False, "label_on": "On", "label_off": "Off"}),
                 "barrel_distortion": ("FLOAT", {"default": 0.0, "min": -0.5, "max": 0.5, "step": 0.001, "decimals": 3}),
+            },
+            "hidden": {
+                "exec_context": "EXECUTION_CONTEXT",
             }
         }
     
@@ -246,7 +250,7 @@ class CRTPostProcessNode:
         
         return torch.tensor([final_r, final_g, final_b], device=rgb_color_tensor.device, dtype=rgb_color_tensor.dtype)
 
-    def load_upscale_model(self, model_path):
+    def load_upscale_model(self, exec_context: execution_context.ExecutionContext, model_path):
         if model_path == "None" or not model_path:
             if self.loaded_upscale_model is not None:
                 colored_print("🗑️ Clearing upscale model (None selected)", Colors.YELLOW)
@@ -261,7 +265,7 @@ class CRTPostProcessNode:
         colored_print(f"📦 Loading upscale model: {model_path}", Colors.CYAN)
 
         try:
-            model_full_path = folder_paths.get_full_path_or_raise("upscale_models", model_path)
+            model_full_path = folder_paths.get_full_path_or_raise(exec_context, "upscale_models", model_path)
             colored_print(f"   📁 Full path: {model_full_path}", Colors.BLUE)
             
             sd = comfy.utils.load_torch_file(model_full_path, safe_load=True)
@@ -292,6 +296,7 @@ class CRTPostProcessNode:
         colored_print("   ⚠️ This function relies on UI widget interaction", Colors.YELLOW)
 
     def process(self, image, **kwargs):
+        exec_context = kwargs["exec_context"]
         colored_print("\n🎨 Starting CRT Post-Process Pipeline...", Colors.HEADER)
         
         device = comfy.model_management.get_torch_device()
@@ -317,7 +322,7 @@ class CRTPostProcessNode:
         if kwargs.get('enable_upscale', False):
             model_path = kwargs.get('upscale_model_path', "None")
             colored_print(f"📦 Upscale Model Loading:", Colors.HEADER)
-            self.load_upscale_model(model_path)
+            self.load_upscale_model(exec_context, model_path)
         colored_print(f"🔄 Processing {batch_size} frame(s)...", Colors.HEADER)
         processed_frames = []
         

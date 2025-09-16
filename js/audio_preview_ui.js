@@ -1,4 +1,4 @@
-import { app } from "/scripts/app.js";
+import { app } from "../../scripts/app.js";
 
 const CSS_STYLES_ENHANCED_AUDIO = `
 @font-face {

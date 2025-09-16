@@ -4,6 +4,8 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from PIL import Image, ImageOps, ImageSequence
+
+import execution_context
 import folder_paths
 import node_helpers
 import comfy.utils
@@ -14,8 +16,8 @@ MAX_RESOLUTION = 16384
 
 class LoadImageResize:
     @classmethod
-    def INPUT_TYPES(s):
-        input_dir = folder_paths.get_input_directory()
+    def INPUT_TYPES(s, exec_context: execution_context.ExecutionContext):
+        input_dir = folder_paths.get_input_directory(user_hash=exec_context.user_hash)
         files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
         files = folder_paths.filter_files_content_types(files, ["image"])
         return {
@@ -23,6 +25,9 @@ class LoadImageResize:
                 "image": (sorted(files), {"image_upload": True}),
                 "size": ("INT", {"default": 512, "min": 64, "max": MAX_RESOLUTION, "step": 1}),
                 "multiple_of": ("INT", {"default": 0, "min": 0, "max": 512, "step": 1}),
+            },
+            "hidden": {
+                "exec_context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -31,9 +36,9 @@ class LoadImageResize:
     RETURN_NAMES = ("IMAGE", "MASK", "width", "height")
     FUNCTION = "load_and_resize"
 
-    def load_and_resize(self, image, size, multiple_of=0):
+    def load_and_resize(self, image, size, multiple_of=0, exec_context: execution_context.ExecutionContext=None):
         # Load image (from LoadImage node)
-        image_path = folder_paths.get_annotated_filepath(image)
+        image_path = folder_paths.get_annotated_filepath(image, user_hash=exec_context.user_hash)
         img = node_helpers.pillow(Image.open, image_path)
 
         output_images = []
@@ -114,15 +119,15 @@ class LoadImageResize:
         return (outputs, output_mask, outputs.shape[2], outputs.shape[1])
 
     @classmethod
-    def IS_CHANGED(s, image):
-        image_path = folder_paths.get_annotated_filepath(image)
+    def IS_CHANGED(s, image, size, multiple_of=0, exec_context: execution_context.ExecutionContext=None):
+        image_path = folder_paths.get_annotated_filepath(image, user_hash=exec_context.user_hash)
         m = hashlib.sha256()
         with open(image_path, 'rb') as f:
             m.update(f.read())
         return m.digest().hex()
 
     @classmethod
-    def VALIDATE_INPUTS(s, image):
-        if not folder_paths.exists_annotated_filepath(image):
+    def VALIDATE_INPUTS(s, image, size, multiple_of=0, exec_context: execution_context.ExecutionContext=None):
+        if not folder_paths.exists_annotated_filepath(image, user_hash=exec_context.user_hash):
             return "Invalid image file: {}".format(image)
         return True

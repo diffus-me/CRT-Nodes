@@ -1,6 +1,8 @@
 import os
 import torch
 import numpy as np
+
+import execution_context
 import folder_paths
 from scipy.io.wavfile import write as write_wav
 
@@ -9,16 +11,19 @@ class SaveAudioWithPath:
 
     @classmethod
     def INPUT_TYPES(cls):
-        output_dir = folder_paths.get_output_directory()
+        # output_dir = folder_paths.get_output_directory()
         return {
             "required": {
                 "audio": ("AUDIO", ),
-                "folder_path": ("STRING", {"default": output_dir, "tooltip": "Base folder (or a full file path to get the folder from). Defaults to ComfyUI's output folder."}),
+                "folder_path": ("STRING", {"default": "", "tooltip": "Base folder (or a full file path to get the folder from). Defaults to ComfyUI's output folder."}),
                 "subfolder_name": ("STRING", {"default": "audio", "tooltip": "Subfolder to create within the base folder."}),
                 "filename": ("STRING", {"default": "output", "tooltip": "File name for the audio file (without extension)."}),
                 "suffix": ("STRING", {"default": "", "tooltip": "Optional suffix to append to the filename."}),
                 "sample_rate": ("INT", {"default": 44100, "min": 1, "max": 192000, "tooltip": "Fallback audio sample rate in Hz if not in audio data."}),
                 "overwrite": ("BOOLEAN", {"default": True, "tooltip": "If enabled, existing files will be overwritten. If disabled, a numbered suffix is added."}),
+            },
+            "hidden": {
+                "exec_context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -27,13 +32,14 @@ class SaveAudioWithPath:
     CATEGORY = "CRT/Save"
     DESCRIPTION = "Saves audio to a specified folder with a subfolder as an uncompressed WAV file."
 
-    def save_audio(self, audio, folder_path, subfolder_name, filename, suffix, sample_rate, overwrite):
+    def save_audio(self, audio, folder_path, subfolder_name, filename, suffix, sample_rate, overwrite, exec_context: execution_context.ExecutionContext):
         if audio is None:
             print("❌ ERROR: No input audio provided to SaveAudioWithPath.")
             return ()
 
         try:
             # --- NEW: Automatically handle if folder_path is actually a file path ---
+            folder_path = os.path.join(folder_paths.get_output_directory(user_hash=exec_context.user_hash), folder_path)
             if os.path.isfile(folder_path):
                 # If the input is a file, use its parent directory
                 base_path = os.path.dirname(folder_path)

@@ -1,5 +1,7 @@
 import torch
 import torch.nn.functional as F
+
+import execution_context
 import folder_paths
 import comfy.utils
 import comfy.model_patcher
@@ -216,7 +218,7 @@ class FaceEnhancementProcessor:
 
         return final_mask.squeeze(0)
 
-    def enhance_face(self, image, model, positive, negative, vae, **kwargs):
+    def enhance_face(self, exec_context: execution_context.ExecutionContext, image, model, positive, negative, vae, **kwargs):
         face_bbox_model = kwargs.get('face_bbox_model')
         face_segm_model = kwargs.get('face_segm_model')
         face_cnet_model = kwargs.get('flux_cnet_upscaler_model')
@@ -238,14 +240,14 @@ class FaceEnhancementProcessor:
 
         bbox_filename_only = face_bbox_model.split('/')[-1]
         bbox_path_type = "ultralytics_bbox" if "bbox" in face_bbox_model else "ultralytics_segm"
-        bbox_full_path = folder_paths.get_full_path(bbox_path_type, bbox_filename_only)
+        bbox_full_path = folder_paths.get_full_path(exec_context, bbox_path_type, bbox_filename_only)
 
         segm_filename_only = face_segm_model.split('/')[-1]
-        segm_full_path = folder_paths.get_full_path("ultralytics_segm", segm_filename_only)
+        segm_full_path = folder_paths.get_full_path(exec_context, "ultralytics_segm", segm_filename_only)
 
         if face_bbox_model not in self.detectors: self.detectors[face_bbox_model] = self.UltraDetector(bbox_full_path, "bbox", self._load_yolo)
         if face_segm_model not in self.detectors: self.detectors[face_segm_model] = self.UltraDetector(segm_full_path, "segm", self._load_yolo)
-        if face_cnet_model not in self.models: self.models[face_cnet_model] = ControlNetLoader().load_controlnet(face_cnet_model)[0]
+        if face_cnet_model not in self.models: self.models[face_cnet_model] = ControlNetLoader().load_controlnet(face_cnet_model, exec_context)[0]
         
         bbox_detector, segm_detector, cnet = self.detectors[face_bbox_model], self.detectors[face_segm_model], self.models[face_cnet_model]
         
@@ -658,8 +660,8 @@ def patch_torch_for_compile():
 
 class PreviewImage(SaveImage):
     def __init__(self):
-        self.output_dir = folder_paths.get_temp_directory()
-        self.type = "temp"
+        # self.output_dir = folder_paths.get_temp_directory()
+        # self.type = "temp"
         self.prefix_append = "_temp_" + ''.join(random.choice("abcdefghijklmnopqrstupvxyz") for x in range(5))
         self.compress_level = 1
 
@@ -746,7 +748,7 @@ class ModelManager:
             model.to(offload_device)
             soft_empty_cache()
     
-    def load_models(self, kwargs):
+    def load_models(self, exec_context: execution_context.ExecutionContext, kwargs):
         cache_key = self._create_cache_key(kwargs)
         cached_models = self.cache.get(cache_key)
         
@@ -757,16 +759,16 @@ class ModelManager:
         colored_print("📦 [Cache Miss] Loading models...", Colors.BLUE)
         
         flux_model = comfy.sd.load_diffusion_model(
-            folder_paths.get_full_path("diffusion_models", kwargs["flux_model_name"])
+            folder_paths.get_full_path(exec_context, "diffusion_models", kwargs["flux_model_name"])
         )
         colored_print(f"✅ Loaded Flux model: {kwargs['flux_model_name']}", Colors.GREEN)
         
-        vae = VAELoader().load_vae(kwargs["vae_name"])[0]
+        vae = VAELoader().load_vae(kwargs["vae_name"], exec_context)[0]
         clip = DualCLIPLoader().load_clip(kwargs["clip_l_name"], kwargs["t5_name"], "flux")[0]
         colored_print("✅ Loaded dual CLIP with 'flux' type", Colors.GREEN)
         
-        style_model = StyleModelLoader().load_style_model(kwargs["style_model_name"])[0]
-        clip_vision = CLIPVisionLoader().load_clip(kwargs["clip_vision_name"])[0]
+        style_model = StyleModelLoader().load_style_model(kwargs["style_model_name"], exec_context)[0]
+        clip_vision = CLIPVisionLoader().load_clip(kwargs["clip_vision_name"], exec_context)[0]
         
         models = (flux_model, vae, clip, style_model, clip_vision)
         self.cache.put(cache_key, models)
@@ -1331,18 +1333,18 @@ class FluxAIO_CRT:
     _input_types_cache = None
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, exec_context: execution_context.ExecutionContext):
         if cls._input_types_cache is not None:
             return cls._input_types_cache
-        flux_models = folder_paths.get_filename_list("diffusion_models")
-        vae_models = folder_paths.get_filename_list("vae")
-        text_encoder_models = folder_paths.get_filename_list("text_encoders")
-        upscale_models = folder_paths.get_filename_list("upscale_models")
-        style_models = folder_paths.get_filename_list("style_models")
-        clip_vision_models = folder_paths.get_filename_list("clip_vision")
-        cnet_models = ["None"] + folder_paths.get_filename_list("controlnet")
-        bbox_files = folder_paths.get_filename_list("ultralytics_bbox")
-        segm_files = folder_paths.get_filename_list("ultralytics_segm")
+        flux_models = folder_paths.get_filename_list(exec_context, "diffusion_models")
+        vae_models = folder_paths.get_filename_list(exec_context, "vae")
+        text_encoder_models = folder_paths.get_filename_list(exec_context, "text_encoders")
+        upscale_models = folder_paths.get_filename_list(exec_context, "upscale_models")
+        style_models = folder_paths.get_filename_list(exec_context, "style_models")
+        clip_vision_models = folder_paths.get_filename_list(exec_context, "clip_vision")
+        cnet_models = ["None"] + folder_paths.get_filename_list(exec_context, "controlnet")
+        bbox_files = folder_paths.get_filename_list(exec_context, "ultralytics_bbox")
+        segm_files = folder_paths.get_filename_list(exec_context, "ultralytics_segm")
 
         resolution_presets = [
             "896x1152 (3:4 Portrait)", "768x1344 (9:16 Portrait)", "832x1216 (2:3 Portrait)", 
@@ -1397,22 +1399,22 @@ class FluxAIO_CRT:
             "enable_img2img": ("BOOLEAN", {"default": False}),
             "img2img_denoise": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.01}),
             "enable_lora_stack": ("BOOLEAN", {"default": False}),
-            "lora_1_name": (["None"] + folder_paths.get_filename_list("loras"), {"default": "None"}),
+            "lora_1_name": (["None"] + folder_paths.get_filename_list(exec_context, "loras"), {"default": "None"}),
             "lora_1_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
             "lora_1_clip_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
-            "lora_2_name": (["None"] + folder_paths.get_filename_list("loras"), {"default": "None"}),
+            "lora_2_name": (["None"] + folder_paths.get_filename_list(exec_context, "loras"), {"default": "None"}),
             "lora_2_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
             "lora_2_clip_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
-            "lora_3_name": (["None"] + folder_paths.get_filename_list("loras"), {"default": "None"}),
+            "lora_3_name": (["None"] + folder_paths.get_filename_list(exec_context, "loras"), {"default": "None"}),
             "lora_3_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
             "lora_3_clip_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
-            "lora_4_name": (["None"] + folder_paths.get_filename_list("loras"), {"default": "None"}),
+            "lora_4_name": (["None"] + folder_paths.get_filename_list(exec_context, "loras"), {"default": "None"}),
             "lora_4_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
             "lora_4_clip_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
-            "lora_5_name": (["None"] + folder_paths.get_filename_list("loras"), {"default": "None"}),
+            "lora_5_name": (["None"] + folder_paths.get_filename_list(exec_context, "loras"), {"default": "None"}),
             "lora_5_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
             "lora_5_clip_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
-            "lora_6_name": (["None"] + folder_paths.get_filename_list("loras"), {"default": "None"}),
+            "lora_6_name": (["None"] + folder_paths.get_filename_list(exec_context, "loras"), {"default": "None"}),
             "lora_6_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
             "lora_6_clip_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
             "flux_guidance": ("FLOAT", {"default": 2.5, "min": 0.0, "max": 10.0, "step": 0.1}),
@@ -1548,6 +1550,7 @@ class FluxAIO_CRT:
                 "lora_stack": ("STRING", {"multiline": True, "default": "[]"}),
                 "negative_prompt": ("STRING", {"multiline": True, "default": ""}),
                 "florence2_text_input": ("STRING", {"multiline": True, "default": ""}),
+                "exec_context": "EXECUTION_CONTEXT",
             }
         }
         
@@ -1669,6 +1672,7 @@ class FluxAIO_CRT:
         return json.dumps(lora_config, sort_keys=True)         
 
     def execute(self, **kwargs):
+        exec_context = kwargs.get("exec_context")
         seed = kwargs.get("seed")
         if seed is None:
             seed = 1
@@ -1685,7 +1689,7 @@ class FluxAIO_CRT:
         
         try:
             self._lazy_init_helpers()
-            model, vae, clip, style_model, clip_vision = self.model_manager.load_models(kwargs)
+            model, vae, clip, style_model, clip_vision = self.model_manager.load_models(exec_context, kwargs)
             processed_model, processed_clip = self._process_model_pipeline(model, clip, kwargs)
             positive, negative = self._prepare_conditioning(processed_clip, **kwargs)
             width, height = self._calculate_dimensions_from_kwargs(kwargs)
@@ -1697,7 +1701,7 @@ class FluxAIO_CRT:
                 image_before_final_fx, image_to_process = cached_data
             else:
                 colored_print("\n🔥 [Cache Miss] Starting new computation", Colors.HEADER)
-                final_latent = self._execute_first_pass(processed_model, (positive, negative), vae, width, height, kwargs)
+                final_latent = self._execute_first_pass(exec_context, processed_model, (positive, negative), vae, width, height, kwargs)
                 image_to_process = VAEDecode().decode(vae, final_latent)[0]
                 
                 if kwargs["enable_2nd_pass"]:
@@ -1743,7 +1747,7 @@ class FluxAIO_CRT:
 
                 if kwargs.get("enable_face_enhancement"):
                     colored_print("🎭 Applying Face Enhancement (on miss)...", Colors.GREEN)
-                    image_to_process = self.face_enhancement_processor.enhance_face(
+                    image_to_process = self.face_enhancement_processor.enhance_face(exec_context=exec_context,
                         image=image_to_process, model=processed_model, positive=positive, negative=negative, vae=vae, **kwargs
                     )
                 
@@ -1762,10 +1766,10 @@ class FluxAIO_CRT:
                 ui_output.update(self._create_fast_preview(final_image, kwargs["fast_preview_format"], kwargs["fast_preview_quality"]))
             else:
                 temp_previewer = PreviewImage()
-                ui_previews_for_gallery.extend(temp_previewer.save_images(images=final_image, filename_prefix="FluxAIO_Final")["ui"]["images"])
+                ui_previews_for_gallery.extend(temp_previewer.save_images(images=final_image, filename_prefix="FluxAIO_Final", context=exec_context)["ui"]["images"])
             
             if kwargs.get("enable_save_image"):
-                save_results = SaveImage().save_images(images=final_image, filename_prefix=kwargs["filename_prefix"])
+                save_results = SaveImage().save_images(images=final_image, filename_prefix=kwargs["filename_prefix"], context=exec_context)
                 if "images" in save_results.get("ui", {}): ui_previews_for_gallery.extend(save_results["ui"]["images"])
             
             ui_output["images"] = ui_previews_for_gallery
@@ -1791,10 +1795,10 @@ class FluxAIO_CRT:
             gc.collect()
             if torch.cuda.is_available(): torch.cuda.empty_cache()
             
-    def _validate_and_fix_parameters(self, kwargs):
+    def _validate_and_fix_parameters(self, exec_context: execution_context.ExecutionContext, kwargs):
         fixed_kwargs = kwargs.copy()
         if not hasattr(self, '_all_inputs_def'):
-            input_defs = self.INPUT_TYPES()
+            input_defs = self.INPUT_TYPES(exec_context)
             all_inputs = input_defs.get('required', {})
             all_inputs.update(input_defs.get('optional', {}))
             all_inputs.update(input_defs.get('hidden', {}))
@@ -1825,7 +1829,7 @@ class FluxAIO_CRT:
                     fixed_kwargs[key] = default_val
         return fixed_kwargs
                 
-    def _prepare_conditioning(self, processed_clip, **kwargs):
+    def _prepare_conditioning(self, exec_context: execution_context.ExecutionContext,  processed_clip, **kwargs):
         conditioning_keys = ["positive_prompt", "negative_prompt", "flux_guidance", "multiplier", "dry_wet_mix"]
         if kwargs.get("enable_style_model"):
             conditioning_keys.extend(["enable_style_model", "style_model_name", "clip_vision_name", "style_strength", "strength_type", "crop"])
@@ -1842,8 +1846,8 @@ class FluxAIO_CRT:
         if kwargs.get("enable_style_model"):
             colored_print("🎨 Applying Redux Style Model...", Colors.CYAN)
             
-            style_model = self.style_loader.load_style_model(kwargs["style_model_name"])[0]
-            clip_vision = self.clip_vision_loader.load_clip(kwargs["clip_vision_name"])[0]
+            style_model = self.style_loader.load_style_model(kwargs["style_model_name"], exec_context)[0]
+            clip_vision = self.clip_vision_loader.load_clip(kwargs["clip_vision_name"], exec_context, )[0]
             
             crop_setting = kwargs.get("crop", "center")
             if kwargs.get("style_image") is not None:
@@ -1873,7 +1877,7 @@ class FluxAIO_CRT:
             
         return result
 
-    def _execute_first_pass(self, model, conditioning, vae, width, height, kwargs):
+    def _execute_first_pass(self, exec_context: execution_context.ExecutionContext, model, conditioning, vae, width, height, kwargs):
         pass1_cache_key = self._create_cache_key(kwargs, "first_pass")
         if kwargs.get("img2img_image") is None and (cached_latent := self.pass1_cache.get(pass1_cache_key)):
             colored_print("🚀 [Cache Hit] Reusing first pass latent.", Colors.GREEN)
@@ -1897,13 +1901,13 @@ class FluxAIO_CRT:
                 final_latent = common_ksampler(model, seed, steps, 1.0, sampler_name, scheduler, positive, negative, initial_latent, denoise)[0]
             else:
                 first_stage_steps = max(1, int(steps * injection_point))
-                latent_after_stage1 = common_ksampler(model, seed, steps, 1.0, sampler_name, scheduler, positive, negative, initial_latent, denoise=denoise, start_step=0, last_step=first_stage_steps, force_full_denoise=False)[0]
+                latent_after_stage1 = common_ksampler(exec_context, model, seed, steps, 1.0, sampler_name, scheduler, positive, negative, initial_latent, denoise=denoise, start_step=0, last_step=first_stage_steps, force_full_denoise=False)[0]
                 torch.manual_seed(seed + injection_seed_offset)
                 new_noise = torch.randn_like(latent_after_stage1["samples"])
                 if normalize_injected_noise == "enable" and (std := latent_after_stage1["samples"].std()) > 1e-6:
                     new_noise = new_noise * std + latent_after_stage1["samples"].mean()
                 latent_after_stage1["samples"] += new_noise * injection_strength
-                final_latent = common_ksampler(model, seed, steps, 1.0, sampler_name, scheduler, positive, negative, latent_after_stage1, denoise=1.0, disable_noise=True, start_step=first_stage_steps, last_step=steps, force_full_denoise=True)[0]
+                final_latent = common_ksampler(exec_context, model, seed, steps, 1.0, sampler_name, scheduler, positive, negative, latent_after_stage1, denoise=1.0, disable_noise=True, start_step=first_stage_steps, last_step=steps, force_full_denoise=True)[0]
         else:
             final_latent = common_ksampler(model, kwargs["seed"], kwargs["steps"], 1.0, kwargs["sampler_name"], kwargs["scheduler"], positive, negative, initial_latent, denoise)[0]
         if kwargs.get("img2img_image") is None: self.pass1_cache.put(pass1_cache_key, final_latent)
@@ -1933,7 +1937,7 @@ class FluxAIO_CRT:
             colored_print("🎯 Applying LoRAs...", Colors.CYAN)
             for i in range(1, 7):
                 if (lora_name := kwargs.get(f"lora_{i}_name", "None")) and lora_name != "None":
-                    processed_model, processed_clip = self.lora_loader.load_lora(processed_model, processed_clip, lora_name, kwargs.get(f"lora_{i}_strength", 1.0), kwargs.get(f"lora_{i}_clip_strength", 1.0))
+                    processed_model, processed_clip = self.lora_loader.load_lora(processed_model, processed_clip, lora_name, kwargs.get(f"lora_{i}_strength", 1.0), kwargs.get(f"lora_{i}_clip_strength", 1.0), exec_context)
         if kwargs.get("enable_lora_block_patcher"): processed_model = self._apply_lora_block_patching(processed_model, kwargs)
         result = (processed_model, processed_clip)
         self.lora_processed_cache.put(lora_cache_key, result)

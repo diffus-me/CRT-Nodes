@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import comfy
 import comfy.utils
 import comfy.model_management as mm
+import execution_context
 from comfy_extras.nodes_upscale_model import ImageUpscaleWithModel, UpscaleModelLoader
 import folder_paths
 import math
@@ -25,7 +26,7 @@ def colored_print(message, color=Colors.ENDC):
 class CRT_UpscaleModelAdv:
     """Advanced upscale node with tiling, smart memory management, and output multiplier control."""
     _cache = {}
-    _max_cache_size = 5
+    _max_cache_size = 0
     
     precision_options = ["auto", "fp32", "fp16", "bf16"]
     tile_count_options = ["1", "4", "8", "16"]
@@ -35,8 +36,8 @@ class CRT_UpscaleModelAdv:
         self.image_upscaler = ImageUpscaleWithModel()
         
     @classmethod
-    def INPUT_TYPES(cls):
-        upscale_models = folder_paths.get_filename_list("upscale_models")
+    def INPUT_TYPES(cls, exec_context: execution_context.ExecutionContext):
+        upscale_models = folder_paths.get_filename_list(exec_context, "upscale_models")
         return {
             "required": {
                 "image": ("IMAGE",),
@@ -87,6 +88,9 @@ class CRT_UpscaleModelAdv:
                     "default": True,
                     "tooltip": "Offload model to CPU after processing to save VRAM"
                 }),
+            },
+            "hidden": {
+                "exec_context": "EXECUTION_CONTEXT",
             }
         }
     
@@ -225,7 +229,7 @@ class CRT_UpscaleModelAdv:
         
         return result
     
-    def upscale_advanced(self, image, upscale_model_name, use_fixed_resolution, output_multiplier, fixed_width, fixed_height, tile_count, precision, batch_size, offload_model):
+    def upscale_advanced(self, image, upscale_model_name, use_fixed_resolution, output_multiplier, fixed_width, fixed_height, tile_count, precision, batch_size, offload_model, exec_context: execution_context.ExecutionContext):
         """Advanced upscaling with all features."""
         cache_key = self._create_cache_key(image, upscale_model_name, use_fixed_resolution, output_multiplier, fixed_width, fixed_height, tile_count, precision, batch_size)
         
@@ -247,7 +251,7 @@ class CRT_UpscaleModelAdv:
         colored_print(f"  📁 Model: {upscale_model_name}", Colors.BLUE)
         colored_print(f"  📐 Input resolution: {image.shape[2]}x{image.shape[1]}", Colors.BLUE)
         try:
-            upscale_model = self.upscale_loader.load_model(upscale_model_name)[0]
+            upscale_model = self.upscale_loader.load_model(upscale_model_name, exec_context)[0]
             colored_print(f"  ✅ Model loaded successfully", Colors.GREEN)
         except Exception as e:
             colored_print(f"  ❌ Failed to load model: {e}", Colors.RED)
@@ -322,7 +326,7 @@ class CRT_UpscaleModelAdv:
             ).permute(0, 2, 3, 1)
             
         final_result = torch.clamp(full_upscaled, 0, 1).to(image.dtype).to(image.device)
-        self._cache[cache_key] = final_result.clone()
+        # self._cache[cache_key] = final_result.clone()
         self._manage_cache_size()
         
         final_width = final_result.shape[2]

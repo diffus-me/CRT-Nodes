@@ -2,6 +2,8 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import os
+
+import execution_context
 import folder_paths
 import comfy.utils
 import comfy.sd
@@ -327,10 +329,10 @@ class FaceEnhancementPipeline:
         colored_print("🎭 Face Enhancement Pipeline initialized!", Colors.HEADER)
 
     @classmethod
-    def INPUT_TYPES(s):
-        try: bbox_files = folder_paths.get_filename_list("ultralytics_bbox")
+    def INPUT_TYPES(s, exec_context: execution_context.ExecutionContext):
+        try: bbox_files = folder_paths.get_filename_list(exec_context, "ultralytics_bbox")
         except: bbox_files = []
-        try: segm_files = folder_paths.get_filename_list("ultralytics_segm")
+        try: segm_files = folder_paths.get_filename_list(exec_context, "ultralytics_segm")
         except: segm_files = []
         
         return {
@@ -365,6 +367,9 @@ class FaceEnhancementPipeline:
                 "color_match_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
                 "enhancement_mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "Mix between original (0.0) and enhanced (1.0) face. 0.5 = 50/50 blend"}),
             },
+            "hidden": {
+                "exec_context": "EXECUTION_CONTEXT",
+            }
         }
         
     RETURN_TYPES = ("IMAGE", "IMAGE", "IMAGE")
@@ -375,7 +380,8 @@ class FaceEnhancementPipeline:
     def execute(self, image, model, positive, vae, control_net, face_bbox_model, face_segm_model, 
                 bbox_threshold, segm_threshold, initial_upscale_resolution, upscale_resolution, 
                 resize_back_to_original, padding, mask_expand, mask_blur, 
-                steps, sampler_name, scheduler, seed, seed_shift, controlnet_strength, control_end, color_match_strength, enhancement_mix):
+                steps, sampler_name, scheduler, seed, seed_shift, controlnet_strength, control_end, color_match_strength, enhancement_mix,
+                exec_context: execution_context.ExecutionContext=None):
         
         colored_print("\n🎭 Starting Face Enhancement Pipeline...", Colors.HEADER)
         
@@ -397,9 +403,9 @@ class FaceEnhancementPipeline:
         colored_print(f"   ✅ Created {len(negative)} negative conditioning(s)", Colors.GREEN)
         bbox_filename_only = face_bbox_model.split('/')[-1]
         bbox_path_type = "ultralytics_bbox" if "bbox" in face_bbox_model else "ultralytics_segm"
-        bbox_full_path = folder_paths.get_full_path(bbox_path_type, bbox_filename_only)
+        bbox_full_path = folder_paths.get_full_path(exec_context, bbox_path_type, bbox_filename_only)
         segm_filename_only = face_segm_model.split('/')[-1]
-        segm_full_path = folder_paths.get_full_path("ultralytics_segm", segm_filename_only)
+        segm_full_path = folder_paths.get_full_path(exec_context, "ultralytics_segm", segm_filename_only)
 
         colored_print("🤖 Loading detection models...", Colors.HEADER)
         
@@ -463,7 +469,7 @@ class FaceEnhancementPipeline:
         colored_print(f"   Latent shape: {latent_shape}", Colors.BLUE)
         
         colored_print("🔥 Running diffusion sampling...", Colors.GREEN)
-        enhanced_latent_tuple = common_ksampler(model, actual_seed, steps, cfg, sampler_name, scheduler, cnet_positive, cnet_negative, face_latent, denoise=1.0)
+        enhanced_latent_tuple = common_ksampler(exec_context, model, actual_seed, steps, cfg, sampler_name, scheduler, cnet_positive, cnet_negative, face_latent, denoise=1.0)
         enhanced_latent = enhanced_latent_tuple[0]
         
         colored_print("🎨 Decoding enhanced latent...", Colors.CYAN)

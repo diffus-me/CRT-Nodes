@@ -5,6 +5,7 @@ import comfy.samplers
 import comfy.utils
 import comfy.model_sampling
 import comfy.sd
+import execution_context
 import folder_paths
 import comfy.model_management
 import latent_preview
@@ -99,7 +100,7 @@ def set_shift(model, sigma_shift):
 class CRT_WAN_BatchSampler:
     @classmethod
     def INPUT_TYPES(cls):
-        output_dir = folder_paths.get_output_directory()
+        # output_dir = folder_paths.get_output_directory()
         return {
             "required": {
                 "model_high_noise": ("MODEL",), "model_low_noise": ("MODEL",),
@@ -126,7 +127,7 @@ class CRT_WAN_BatchSampler:
                 "temporal_tile_overlap": ("INT", {"default": 8, "min": 4, "max": 4096, "step": 4}),
                 "create_comparison_grid": ("BOOLEAN", {"default": True}),
                 "save_videos_images": ("BOOLEAN", {"default": True}),
-                "save_folder_path": ("STRING", {"default": output_dir}),
+                "save_folder_path": ("STRING", {"default": ""}),
                 "save_subfolder_name": ("STRING", {"default": "FAST_BATCH"}),
                 "save_filename_prefix": ("STRING", {"default": "output"}),
                 "fps": ("INT", {"default": 16, "min": 1, "max": 120}),
@@ -134,7 +135,8 @@ class CRT_WAN_BatchSampler:
             }, "optional": { "vae": ("VAE",), },
             "hidden": {
                 "prompt": "PROMPT",
-                "extra_pnginfo": "EXTRA_PNGINFO"
+                "extra_pnginfo": "EXTRA_PNGINFO",
+                "exec_context": "EXECUTION_CONTEXT"
             },
         }
 
@@ -253,7 +255,7 @@ class CRT_WAN_BatchSampler:
                     extras_slice[key] = val
         return [[cond_tensor, extras_slice]]
 
-    def sample(self, model_high_noise, model_low_noise, positive, negative, width, height, frame_count, batch_count, seed, increment_seed, steps, boundary, cfg_high_noise, cfg_low_noise, sampler_name, scheduler, sigma_shift, enhance_weight, enable_vae_decode, enable_vae_tiled_decode, tile_size, tile_overlap, temporal_tile_size, temporal_tile_overlap, create_comparison_grid, save_videos_images, save_folder_path, save_subfolder_name, save_filename_prefix, fps, low_vram_mode, vae=None, prompt=None, extra_pnginfo=None):
+    def sample(self, model_high_noise, model_low_noise, positive, negative, width, height, frame_count, batch_count, seed, increment_seed, steps, boundary, cfg_high_noise, cfg_low_noise, sampler_name, scheduler, sigma_shift, enhance_weight, enable_vae_decode, enable_vae_tiled_decode, tile_size, tile_overlap, temporal_tile_size, temporal_tile_overlap, create_comparison_grid, save_videos_images, save_folder_path, save_subfolder_name, save_filename_prefix, fps, low_vram_mode, vae=None, prompt=None, extra_pnginfo=None, exec_context: execution_context.ExecutionContext=None):
         
         actual_batch_size = batch_count
         Log.info(f"Batch count set to: {actual_batch_size}.")

@@ -2,6 +2,8 @@ import os
 import torch
 import cv2
 import numpy as np
+
+import execution_context
 import folder_paths
 import tempfile
 import subprocess
@@ -12,11 +14,11 @@ class SaveVideoWithPath:
 
     @classmethod
     def INPUT_TYPES(cls):
-        output_dir = folder_paths.get_output_directory()
+        # output_dir = folder_paths.get_output_directory()
         return {
             "required": {
                 "image": ("IMAGE", ),
-                "folder_path": ("STRING", {"default": output_dir}),
+                "folder_path": ("STRING", {"default": ""}),
                 "subfolder_name": ("STRING", {"default": "videos"}),
                 "filename": ("STRING", {"default": "output"}),
                 "fps": ("INT", {"default": 16, "min": 1, "max": 120}),
@@ -33,7 +35,8 @@ class SaveVideoWithPath:
     FUNCTION = "save_video"
     CATEGORY = "CRT/Save"
 
-    def save_video(self, image, folder_path, subfolder_name, filename, fps, frames_limit, activate, prompt=None, extra_pnginfo=None):
+    def save_video(self, image, folder_path, subfolder_name, filename, fps, frames_limit, activate, prompt=None, extra_pnginfo=None, exec_context: execution_context.ExecutionContext=None):
+        folder_path = os.path.join(folder_paths.get_output_directory(user_hash=exec_context.user_hash), folder_path)
         if not activate:
             print("💡 SaveVideoWithPath is deactivated. Skipping video save.")
             return ()
